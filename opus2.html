@@ -1,0 +1,67 @@
+<html>
+<head>
+</head>
+<body>
+<script>
+
+function init(){
+var AudioContext = window.AudioContext || window.webkitAudioContext; 
+var audioCtx = new AudioContext();
+
+function removeNoise(){
+	var compressor = audioCtx.createDynamicsCompressor();
+	compressor.threshold.value = -50;
+	compressor.knee.value = 40;
+	compressor.ratio.value = 12;
+	compressor.reduction.value = -20;
+	compressor.attack.value = 0;
+	compressor.release.value = 0.25;
+
+	var filter = audioCtx.createBiquadFilter();
+	filter.Q.value = 8.30;
+	filter.frequency.value = 355;
+	filter.gain.value = 3.0;
+	filter.type = 'bandpass';
+	filter.connect(compressor);
+
+
+	compressor.connect(audioCtx.destination)
+	filter.connect(audioCtx.destination)
+}
+var source = audioCtx.createBufferSource();
+var scriptNode = audioCtx.createScriptProcessor(1024*4, 1, 1); //each frame size is 1024*4 (32bit float)
+
+
+var audiodecoder = new Worker("audiodecoder.js"); //create a worker (thread) for doing heavy decoding operation
+var start = false;
+var frame = [];
+
+audiodecoder.onmessage = function(event) { //receive decoded frame from worker
+
+	frame.push(event.data); //push to frame container
+	if (frame.length>3 && !start)
+	{
+		start = true; //start just one time
+		source.connect(scriptNode);
+		scriptNode.connect(audioCtx.destination);
+	}
+};
+
+
+
+
+
+scriptNode.onaudioprocess = function(audioProcessingEvent) {
+  var outputBuffer = audioProcessingEvent.outputBuffer;
+  if (frame.length >= 1)
+  {
+    console.log("Read");
+    outputBuffer.getChannelData(0).set(frame.shift()); //read one frame (it should be 1024*4).
+  }
+}
+    
+}
+</script>
+<button onclick="init()">START</button>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<html>
+<head>
+</head>
+<body>
+<script src = "libopus.js"></script>
+<script  src = "resampler.js"></script>
+<script>
+function clicked(){
+opus = opus_module;
+var resampler = new Resampler(48000 , 44100 , 1, 3763);
+console.log("Loaded");
+
+function concatTypedArrays(a, b) { // a, b TypedArray of same type
+    var c = new (a.constructor)(a.length + b.length);
+    c.set(a, 0);
+    c.set(b, a.length);
+    return c;
+}
+
+var data = new Int8Array();
+
+var mem = opus._malloc(1024);
+var buf = opus._malloc(4000);
+var bufout = opus._malloc(5760*2);
+
+var decoder = opus._opus_decoder_create(48000,1,mem);
+
+
+var AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioCtx = new AudioContext();
+ console.log(audioCtx.sampleRate);
+var source = audioCtx.createBufferSource();
+var scriptNode = audioCtx.createScriptProcessor(1024*4, 1, 1);
+source.connect(scriptNode);
+
+scriptNode.onaudioprocess = function(audioProcessingEvent) {
+  var outputBuffer = audioProcessingEvent.outputBuffer;
+  if (data.length > 1024*4*2)
+  {
+    console.log("Read");
+    outputBuffer.getChannelData(0).set(  resampler.resampler(convertp2f(data.slice(0,1024*4*2)))   );
+	data = data.slice(1024*4*2);
+  }
+}
+    var websocket = new WebSocket("ws://localhost:8082/");
+    websocket.binaryType = 'arraybuffer';
+    websocket.onopen = function(evt) { 
+	console.log("Open");
+	scriptNode.connect(audioCtx.destination);
+        //source.start(0);
+    };
+    websocket.onclose = function(evt) {  console.log("Close");  };
+    websocket.onmessage = function(evt) {
+       opus.HEAPU8.set(new Uint8Array( evt.data ),buf);
+       
+       var d = opus._opus_decode(decoder,buf,evt.data.byteLength,bufout,5760*2,0);
+	console.log(d)
+	var last = new Int8Array(5760)
+
+       var rs = opus.HEAP16.subarray((bufout/2),(bufout/2)+d);
+
+    for(var i=0;i<5760/2;i++)
+    {
+        last[2*i]=rs[i]&0xFF;
+        last[2*i+1]=(rs[i]>>8)&0xFF;
+    }
+
+	data = concatTypedArrays(data,last);
+       
+    };
+    websocket.onerror = function(evt) {  console.log("Error");  };
+
+function convertp2f(pcm)
+{
+                        var data = new DataView(pcm.buffer);
+
+                    var audio = new Int16Array(data.byteLength / Int16Array.BYTES_PER_ELEMENT);
+                    var len = audio.length;
+                    for (var jj = 0; jj < len; ++jj) {
+                        audio[jj] = data.getInt16(jj * Int16Array.BYTES_PER_ELEMENT, true);
+                    }
+
+                    var right = new Float32Array(len);
+
+                    for (var i = 0; i < audio.length;i++) {
+                        var normalizedRight = audio[i] / 32767;
+//ints[i] = floats[i] < 0 ? floats[i] * 32768 : floats[i] * 32767;
+                        right[i] = normalizedRight;
+                    }
+return right;
+}
+}
+</script>
+<button onclick="clicked()">START</button>
+</body>
+</html>
